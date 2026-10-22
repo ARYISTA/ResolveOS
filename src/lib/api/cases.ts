@@ -1,9 +1,13 @@
 import { getMode, apiFetch } from "./client";
 import { resolveHitl } from "@/lib/mock/mockEngine";
-import type { CaseRecord, CreateCaseInput } from "@/lib/schemas";
+import type { CaseRecord, CreateCaseInput, NodeName } from "@/lib/schemas";
 
 // In-memory store for mock mode
 const mockCases = new Map<string, CaseRecord>();
+
+export function getMockCaseRecord(caseId: string): CaseRecord | undefined {
+  return mockCases.get(caseId);
+}
 
 export async function createCase(input: CreateCaseInput): Promise<CaseRecord> {
   const mode = getMode();
@@ -61,15 +65,26 @@ export async function getCase(caseId: string): Promise<CaseRecord | null> {
 
 export async function resolveHumanReview(
   caseId: string,
-  decision: "APPROVED" | "REJECTED"
+  decision: "APPROVED" | "REJECTED",
+  opts?: { modifiedAmount?: number; reason?: string }
 ): Promise<void> {
   const mode = getMode();
 
   if (mode === "mock") {
-    resolveHitl(caseId, decision);
+    resolveHitl(caseId, {
+      decision,
+      modifiedAmount: opts?.modifiedAmount,
+      reason: opts?.reason,
+    });
     const existing = mockCases.get(caseId);
     if (existing) {
       existing.status = decision === "APPROVED" ? "RESOLVED" : "REJECTED";
+      if (opts?.modifiedAmount !== undefined) {
+        existing.approvedAmount = opts.modifiedAmount;
+      }
+      if (opts?.reason !== undefined) {
+        existing.rejectionReason = opts.reason;
+      }
       mockCases.set(caseId, existing);
     }
     return;
@@ -78,5 +93,24 @@ export async function resolveHumanReview(
   const endpoint = decision === "APPROVED" ? "approve" : "reject";
   await apiFetch(`/api/escalations/${caseId}/${endpoint}`, {
     method: "POST",
+    body: opts,
+  });
+}
+
+export async function retryCaseNode(
+  caseId: string,
+  node: NodeName
+): Promise<void> {
+  const mode = getMode();
+
+  if (mode === "mock") {
+    const { retryMockNode } = await import("@/lib/mock/mockEngine");
+    retryMockNode(caseId, node);
+    return;
+  }
+
+  await apiFetch(`/api/cases/${caseId}/retry`, {
+    method: "POST",
+    body: { node },
   });
 }

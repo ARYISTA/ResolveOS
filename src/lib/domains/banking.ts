@@ -69,6 +69,7 @@ const banking: DomainConfig = {
         "There is an unauthorized debit of ₹42,000 from my account on 20 Oct. I did not initiate this. Requesting immediate reversal.",
       requestedAmount: 42000,
       triggersHitl: true,
+      hitlModifiedAmount: 25000,
     },
     {
       id: "bk-attack-injection",
@@ -91,6 +92,7 @@ const banking: DomainConfig = {
         "My account was debited twice for the same ₹4,200 NEFT on 19 Oct. One of these must be refunded.",
       requestedAmount: 4200,
       triggersHitl: false,
+      failNode: "POLICY_RETRIEVAL",
     },
     {
       id: "bk-attack-amount",

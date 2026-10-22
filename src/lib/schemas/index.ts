@@ -107,6 +107,8 @@ export const WsHitlResolved = z.object({
   caseId: z.string(),
   decision: z.enum(["APPROVED", "REJECTED"]),
   reviewer: z.string(),
+  modifiedAmount: z.number().optional(),
+  reason: z.string().optional(),
 });
 
 export const WsCaseCompleted = z.object({
@@ -114,6 +116,7 @@ export const WsCaseCompleted = z.object({
   caseId: z.string(),
   verdict: Verdict,
   refundRef: z.string().optional(),
+  approvedAmount: z.number().optional(),
 });
 
 export const WsAuditEvent = z.object({
@@ -122,6 +125,8 @@ export const WsAuditEvent = z.object({
   action: z.string(),
   actor: z.string(),
   ts: z.string(),
+  oldState: z.string().optional(),
+  newState: z.string().optional(),
 });
 
 export const WsEvent = z.discriminatedUnion("type", [
@@ -148,6 +153,8 @@ export const ScenarioPreset = z.object({
   requestedAmount: z.number(),
   // Whether the mock engine should trigger HITL for this preset
   triggersHitl: z.boolean(),
+  failNode: NodeName.optional(),
+  hitlModifiedAmount: z.number().optional(),
 });
 export type ScenarioPreset = z.infer<typeof ScenarioPreset>;
 
@@ -237,10 +244,14 @@ export interface CaseRecord {
   transactionId: string;
   transactionAmount: number;
   requestedAmount: number;
+  approvedAmount?: number;
+  rejectionReason?: string;
   message: string;
   presetId?: string;
   presetTag?: "Valid" | "Edge case" | "Needs human" | "Attack";
   triggersHitl: boolean;
+  failNode?: NodeName;
+  hitlModifiedAmount?: number;
   status: "OPEN" | "PROCESSING" | "RESOLVED" | "ESCALATED" | "REJECTED";
   createdAt: string;
   traceId: string;
@@ -260,6 +271,9 @@ export interface CreateCaseInput {
   presetId?: string;
   presetTag?: "Valid" | "Edge case" | "Needs human" | "Attack";
   triggersHitl: boolean;
+  failNode?: NodeName;
+  hitlModifiedAmount?: number;
   attachmentName?: string;
 }
+
 

@@ -1,6 +1,13 @@
 "use client";
 
-import { CheckCircle2, AlertTriangle, XCircle, ShieldCheck, UserCheck } from "lucide-react";
+import { useState } from "react";
+import {
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  ShieldCheck,
+  UserCheck,
+} from "lucide-react";
 import type { Decision, Risk, Verdict } from "@/lib/schemas";
 import { formatINR } from "@/lib/utils";
 
@@ -8,13 +15,16 @@ interface DecisionPanelProps {
   verdict?: Verdict;
   decision?: Decision;
   recommendedAmount?: number;
+  approvedAmount?: number;
+  rejectionReason?: string;
+  defaultModifiedAmount?: number;
   confidence?: number;
   riskLevel?: Risk;
   reasoningSummary?: string;
   isEscalated?: boolean;
   hitlResolved?: boolean;
-  onApproveReview?: () => void;
-  onRejectReview?: () => void;
+  onApproveReview?: (modifiedAmount?: number) => void;
+  onRejectReview?: (reason?: string) => void;
   isReviewing?: boolean;
 }
 
@@ -22,6 +32,9 @@ export function DecisionPanel({
   verdict,
   decision = "APPROVE_REFUND",
   recommendedAmount,
+  approvedAmount,
+  rejectionReason,
+  defaultModifiedAmount,
   confidence = 0.89,
   riskLevel = "LOW",
   reasoningSummary,
@@ -34,6 +47,21 @@ export function DecisionPanel({
   const isAllow = verdict === "ALLOW";
   const isDeny = verdict === "DENY";
   const isEscalate = verdict === "ESCALATE" || isEscalated;
+
+  // Local state for reviewer modified amount and rejection reason
+  const [modAmount, setModAmount] = useState<string>(
+    defaultModifiedAmount ? String(defaultModifiedAmount) : ""
+  );
+  const [rejectReason, setRejectReason] = useState<string>(
+    "Claimed amount exceeds verified merchant gateway loss records."
+  );
+  const [showAdjustInput, setShowAdjustInput] = useState(false);
+  const [showRejectInput, setShowRejectInput] = useState(false);
+
+  const hasModifiedAmount =
+    approvedAmount !== undefined &&
+    recommendedAmount !== undefined &&
+    approvedAmount !== recommendedAmount;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -114,7 +142,7 @@ export function DecisionPanel({
             background: "var(--surface)",
             display: "flex",
             flexDirection: "column",
-            gap: 12,
+            gap: 14,
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -127,7 +155,7 @@ export function DecisionPanel({
                 margin: 0,
               }}
             >
-              Action Required: Compliance Reviewer Decision
+              Action required: Compliance reviewer decision
             </h4>
           </div>
 
@@ -140,54 +168,264 @@ export function DecisionPanel({
             }}
           >
             The pipeline is paused at Human Review. As a compliance officer,
-            review the evidence below and confirm the resolution.
+            verify the dispute evidence and select an approval or rejection
+            determination below.
           </p>
 
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              paddingTop: 4,
-            }}
-          >
-            <button
-              type="button"
-              disabled={isReviewing}
-              onClick={onApproveReview}
+          {/* Review Actions */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div
               style={{
-                height: 36,
-                padding: "0 18px",
-                borderRadius: 8,
-                background: "var(--accent)",
-                color: "var(--on-accent)",
-                fontSize: 13,
-                fontWeight: 500,
-                border: "none",
-                cursor: isReviewing ? "not-allowed" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 10,
               }}
             >
-              Approve refund
-            </button>
+              {/* Full approve */}
+              <button
+                type="button"
+                disabled={isReviewing}
+                onClick={() => onApproveReview()}
+                style={{
+                  height: 36,
+                  padding: "0 16px",
+                  borderRadius: 8,
+                  background: "var(--accent)",
+                  color: "var(--on-accent)",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  border: "none",
+                  cursor: isReviewing ? "not-allowed" : "pointer",
+                }}
+              >
+                Approve full amount (
+                {recommendedAmount !== undefined
+                  ? formatINR(recommendedAmount)
+                  : "Full"}
+                )
+              </button>
 
-            <button
-              type="button"
-              disabled={isReviewing}
-              onClick={onRejectReview}
+              {/* Toggle modified amount input */}
+              <button
+                type="button"
+                disabled={isReviewing}
+                onClick={() => {
+                  setShowAdjustInput(!showAdjustInput);
+                  setShowRejectInput(false);
+                }}
+                style={{
+                  height: 36,
+                  padding: "0 14px",
+                  borderRadius: 8,
+                  background: showAdjustInput
+                    ? "var(--accent-soft)"
+                    : "var(--surface-2)",
+                  color: "var(--text)",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  border: "1px solid var(--border)",
+                  cursor: isReviewing ? "not-allowed" : "pointer",
+                }}
+              >
+                {showAdjustInput ? "Cancel adjustment" : "Adjust amount..."}
+              </button>
+
+              {/* Toggle reject reason input */}
+              <button
+                type="button"
+                disabled={isReviewing}
+                onClick={() => {
+                  setShowRejectInput(!showRejectInput);
+                  setShowAdjustInput(false);
+                }}
+                style={{
+                  height: 36,
+                  padding: "0 16px",
+                  borderRadius: 8,
+                  background: showRejectInput
+                    ? "var(--danger-soft)"
+                    : "var(--surface-2)",
+                  color: "var(--danger)",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  border: "1px solid var(--border)",
+                  cursor: isReviewing ? "not-allowed" : "pointer",
+                }}
+              >
+                {showRejectInput ? "Cancel rejection" : "Reject dispute..."}
+              </button>
+            </div>
+
+            {/* Adjusted amount form */}
+            {showAdjustInput && (
+              <div
+                style={{
+                  padding: 12,
+                  borderRadius: 8,
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--border)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <label
+                    htmlFor="modified-amount-input"
+                    style={{ fontSize: 12, color: "var(--text-muted)" }}
+                  >
+                    Adjusted amount (INR):
+                  </label>
+                  <input
+                    id="modified-amount-input"
+                    type="number"
+                    value={modAmount}
+                    onChange={(e) => setModAmount(e.target.value)}
+                    placeholder="Enter amount"
+                    style={{
+                      width: 130,
+                      height: 32,
+                      padding: "0 8px",
+                      borderRadius: 6,
+                      border: "1px solid var(--border-strong)",
+                      background: "var(--surface)",
+                      color: "var(--text)",
+                      fontSize: 13,
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  disabled={isReviewing || !modAmount || Number(modAmount) <= 0}
+                  onClick={() => onApproveReview(Number(modAmount))}
+                  style={{
+                    height: 32,
+                    padding: "0 14px",
+                    borderRadius: 6,
+                    background: "var(--accent)",
+                    color: "var(--on-accent)",
+                    fontSize: 12,
+                    fontWeight: 500,
+                    border: "none",
+                    cursor: "pointer",
+                  }}
+                >
+                  Confirm adjusted approval
+                </button>
+              </div>
+            )}
+
+            {/* Rejection reason form */}
+            {showRejectInput && (
+              <div
+                style={{
+                  padding: 12,
+                  borderRadius: 8,
+                  background: "var(--danger-soft)",
+                  border: "1px solid var(--danger)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                }}
+              >
+                <label
+                  htmlFor="reject-reason-input"
+                  style={{
+                    fontSize: 12,
+                    color: "var(--danger)",
+                    fontWeight: 500,
+                  }}
+                >
+                  Rejection reason:
+                </label>
+                <input
+                  id="reject-reason-input"
+                  type="text"
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  placeholder="Enter rejection justification"
+                  style={{
+                    width: "100%",
+                    height: 32,
+                    padding: "0 8px",
+                    borderRadius: 6,
+                    border: "1px solid var(--danger)",
+                    background: "var(--surface)",
+                    color: "var(--text)",
+                    fontSize: 13,
+                  }}
+                />
+                <div>
+                  <button
+                    type="button"
+                    disabled={isReviewing || !rejectReason.trim()}
+                    onClick={() => onRejectReview(rejectReason)}
+                    style={{
+                      height: 32,
+                      padding: "0 14px",
+                      borderRadius: 6,
+                      background: "var(--danger)",
+                      color: "#ffffff",
+                      fontSize: 12,
+                      fontWeight: 500,
+                      border: "none",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Confirm dispute rejection
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Rejection notice if verdict is DENY */}
+      {(isDeny || rejectionReason) && (
+        <div
+          style={{
+            border: "1px solid var(--danger)",
+            borderRadius: 12,
+            padding: 16,
+            background: "var(--danger-soft)",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 12,
+          }}
+        >
+          <XCircle
+            size={18}
+            strokeWidth={2}
+            color="var(--danger)"
+            style={{ marginTop: 2, flexShrink: 0 }}
+          />
+          <div>
+            <h5
               style={{
-                height: 36,
-                padding: "0 18px",
-                borderRadius: 8,
-                background: "var(--danger-soft)",
-                color: "var(--danger)",
                 fontSize: 13,
-                fontWeight: 500,
-                border: "1px solid var(--border)",
-                cursor: isReviewing ? "not-allowed" : "pointer",
+                fontWeight: 600,
+                color: "var(--danger)",
+                margin: "0 0 4px 0",
               }}
             >
-              Reject dispute
-            </button>
+              Rejection reason
+            </h5>
+            <p
+              style={{
+                fontSize: 13,
+                lineHeight: "20px",
+                color: "var(--danger)",
+                margin: 0,
+              }}
+            >
+              {rejectionReason ||
+                "Dispute was rejected by compliance review. Policy conditions or verification checks failed."}
+            </p>
           </div>
         </div>
       )}
@@ -207,7 +445,13 @@ export function DecisionPanel({
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {/* Action */}
           <div>
-            <span style={{ fontSize: 11, color: "var(--text-faint)", fontWeight: 500 }}>
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--text-faint)",
+                fontWeight: 500,
+              }}
+            >
               RECOMMENDED ACTION
             </span>
             <div
@@ -222,27 +466,79 @@ export function DecisionPanel({
             </div>
           </div>
 
-          {/* Amount */}
+          {/* Amount: Side by side if reviewer approved a modified amount */}
           <div>
-            <span style={{ fontSize: 11, color: "var(--text-faint)", fontWeight: 500 }}>
-              AMOUNT
-            </span>
-            <div
+            <span
               style={{
-                fontSize: 15,
-                fontWeight: 600,
-                color: "var(--text)",
-                marginTop: 4,
-                fontVariantNumeric: "tabular-nums",
+                fontSize: 11,
+                color: "var(--text-faint)",
+                fontWeight: 500,
               }}
             >
-              {recommendedAmount !== undefined ? formatINR(recommendedAmount) : "—"}
-            </div>
+              {hasModifiedAmount ? "AMOUNT (ADJUSTED)" : "AMOUNT"}
+            </span>
+
+            {hasModifiedAmount ? (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: 8,
+                  marginTop: 4,
+                  flexWrap: "wrap",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    textDecoration: "line-through",
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                  title="Original requested amount"
+                >
+                  {formatINR(recommendedAmount!)}
+                </span>
+                <span
+                  style={{
+                    fontSize: 15,
+                    fontWeight: 700,
+                    color: "var(--accent)",
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                  title="Reviewer approved amount"
+                >
+                  {formatINR(approvedAmount!)}
+                </span>
+              </div>
+            ) : (
+              <div
+                style={{
+                  fontSize: 15,
+                  fontWeight: 600,
+                  color: "var(--text)",
+                  marginTop: 4,
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {approvedAmount !== undefined
+                  ? formatINR(approvedAmount)
+                  : recommendedAmount !== undefined
+                  ? formatINR(recommendedAmount)
+                  : "—"}
+              </div>
+            )}
           </div>
 
           {/* Confidence */}
           <div>
-            <span style={{ fontSize: 11, color: "var(--text-faint)", fontWeight: 500 }}>
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--text-faint)",
+                fontWeight: 500,
+              }}
+            >
               AI CONFIDENCE
             </span>
             <div
@@ -261,7 +557,13 @@ export function DecisionPanel({
 
           {/* Risk Level */}
           <div>
-            <span style={{ fontSize: 11, color: "var(--text-faint)", fontWeight: 500 }}>
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--text-faint)",
+                fontWeight: 500,
+              }}
+            >
               RISK LEVEL
             </span>
             <div style={{ marginTop: 4 }}>

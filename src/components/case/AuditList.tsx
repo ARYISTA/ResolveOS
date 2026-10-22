@@ -3,6 +3,8 @@ export interface CaseAuditEventItem {
   action: string;
   actor: string;
   timestamp: string;
+  oldState?: string;
+  newState?: string;
 }
 
 interface AuditListProps {
@@ -79,9 +81,17 @@ export function AuditList({ events }: AuditListProps) {
               borderBottom:
                 idx < events.length - 1 ? "1px solid var(--border)" : "none",
               gap: 16,
+              flexWrap: "wrap",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                flexWrap: "wrap",
+              }}
+            >
               <span
                 style={{
                   fontFamily: "var(--font-mono)",
@@ -104,6 +114,51 @@ export function AuditList({ events }: AuditListProps) {
               >
                 actor: {ev.actor}
               </span>
+
+              {(ev.oldState || ev.newState) && (
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  {ev.oldState && (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontFamily: "var(--font-mono)",
+                        padding: "2px 6px",
+                        borderRadius: 4,
+                        background: "var(--surface-2)",
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      {ev.oldState}
+                    </span>
+                  )}
+                  {ev.oldState && ev.newState && (
+                    <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
+                      →
+                    </span>
+                  )}
+                  {ev.newState && (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontFamily: "var(--font-mono)",
+                        padding: "2px 6px",
+                        borderRadius: 4,
+                        background: "var(--accent-soft)",
+                        color: "var(--accent)",
+                        fontWeight: 500,
+                      }}
+                    >
+                      {ev.newState}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             <span
@@ -112,14 +167,17 @@ export function AuditList({ events }: AuditListProps) {
                 fontSize: 11,
                 color: "var(--text-muted)",
                 fontVariantNumeric: "tabular-nums",
+                whiteSpace: "nowrap",
               }}
             >
               {new Date(ev.timestamp).toLocaleTimeString("en-IN", {
+                timeZone: "Asia/Kolkata",
                 hour12: false,
                 hour: "2-digit",
                 minute: "2-digit",
                 second: "2-digit",
-              })}
+              })}{" "}
+              IST
             </span>
           </div>
         ))}

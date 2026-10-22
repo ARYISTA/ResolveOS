@@ -7,6 +7,7 @@ import {
   AlertCircle,
   XCircle,
   CircleDashed,
+  RotateCw,
 } from "lucide-react";
 import type { NodeName } from "@/lib/schemas";
 
@@ -27,12 +28,14 @@ export interface NodeStateInfo {
   status: NodeStateStatus;
   durationMs?: number;
   resultSummary?: string;
+  errorMessage?: string;
 }
 
 interface PipelineStepperProps {
   nodes: NodeStateInfo[];
   selectedNode: NodeName | null;
   onSelectNode: (node: NodeName) => void;
+  onRetryNode?: (node: NodeName) => void;
   showHumanReview: boolean;
 }
 
@@ -79,7 +82,9 @@ function renderStatusIcon(status: NodeStateStatus) {
     case "failed":
       return <XCircle size={16} strokeWidth={2} color="var(--danger)" />;
     case "skipped":
-      return <CircleDashed size={16} strokeWidth={1.5} color="var(--text-faint)" />;
+      return (
+        <CircleDashed size={16} strokeWidth={1.5} color="var(--text-faint)" />
+      );
     case "idle":
     default:
       return (
@@ -119,6 +124,7 @@ export function PipelineStepper({
   nodes,
   selectedNode,
   onSelectNode,
+  onRetryNode,
   showHumanReview,
 }: PipelineStepperProps) {
   const visibleNodes = nodes.filter(
@@ -140,6 +146,7 @@ export function PipelineStepper({
         const isSelected = selectedNode === item.node;
         const isRunning = item.status === "running";
         const isWaiting = item.status === "waiting";
+        const isFailed = item.status === "failed";
         const layerInfo = LAYER_CONFIG[item.layer];
         const isLast = index === visibleNodes.length - 1;
 
@@ -165,6 +172,8 @@ export function PipelineStepper({
                   background:
                     item.status === "success"
                       ? "var(--success)"
+                      : item.status === "failed"
+                      ? "var(--danger)"
                       : "var(--border-strong)",
                   transition: "background 200ms ease-out",
                   zIndex: 0,
@@ -191,6 +200,8 @@ export function PipelineStepper({
                   ? "var(--accent-soft)"
                   : isWaiting
                   ? "var(--layer-human-soft)"
+                  : isFailed
+                  ? "var(--danger-soft)"
                   : "var(--surface)",
                 border: isSelected
                   ? "1px solid var(--accent)"
@@ -198,6 +209,8 @@ export function PipelineStepper({
                   ? "1px solid var(--accent)"
                   : isWaiting
                   ? "1px solid var(--warning)"
+                  : isFailed
+                  ? "1px solid var(--danger)"
                   : "1px solid var(--border)",
                 borderRadius: 12,
                 padding: "12px 16px",
@@ -268,6 +281,8 @@ export function PipelineStepper({
                           ? "var(--accent)"
                           : item.status === "waiting"
                           ? "var(--warning)"
+                          : item.status === "failed"
+                          ? "var(--danger)"
                           : "var(--text-faint)",
                     }}
                   >
@@ -289,18 +304,69 @@ export function PipelineStepper({
                 </div>
               </div>
 
-              {/* One-line result summary */}
-              {item.resultSummary && (
+              {/* One-line result summary or error */}
+              {item.status === "failed" && item.errorMessage ? (
                 <div
                   style={{
-                    fontSize: 12,
-                    color: "var(--text-muted)",
                     paddingLeft: 30,
-                    lineHeight: "16px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
                   }}
                 >
-                  {item.resultSummary}
+                  <p
+                    style={{
+                      fontSize: 12,
+                      color: "var(--danger)",
+                      margin: 0,
+                      lineHeight: "18px",
+                    }}
+                  >
+                    Error: {item.errorMessage}
+                  </p>
+
+                  {onRetryNode && (
+                    <div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRetryNode(item.node);
+                        }}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          height: 28,
+                          padding: "0 12px",
+                          borderRadius: 6,
+                          background: "var(--accent)",
+                          color: "var(--on-accent)",
+                          fontSize: 12,
+                          fontWeight: 500,
+                          border: "none",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <RotateCw size={12} strokeWidth={2} />
+                        <span>Retry {item.displayName}</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
+              ) : (
+                item.resultSummary && (
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: "var(--text-muted)",
+                      paddingLeft: 30,
+                      lineHeight: "16px",
+                    }}
+                  >
+                    {item.resultSummary}
+                  </div>
+                )
               )}
             </div>
           </div>
