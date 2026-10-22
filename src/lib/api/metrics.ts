@@ -134,7 +134,7 @@ export async function getDashboardMetrics(
   }
 
   const endpoint = companyId
-    ? `/api/metrics?companyId=${encodeURIComponent(companyId)}`
-    : "/api/metrics";
+    ? `/api/metrics/summary?tenantId=${encodeURIComponent(companyId)}`
+    : "/api/metrics/summary";
   return apiFetch<DashboardMetrics>(endpoint);
 }

@@ -489,6 +489,11 @@ export function ensureMockSeedData() {
   }
 }
 
+export function resetMockData(): void {
+  mockCases.clear();
+  ensureMockSeedData();
+}
+
 // Initialize seed data immediately
 ensureMockSeedData();
 
@@ -649,7 +654,7 @@ export async function getCases(
   if (options.page) params.set("page", String(options.page));
   if (options.limit) params.set("limit", String(options.limit));
 
-  return apiFetch<CaseListResult>(`/api/cases?${params.toString()}`);
+  return apiFetch<CaseListResult>(`/api/tickets?${params.toString()}`);
 }
 
 export async function getRecentCases(
@@ -769,7 +774,7 @@ export async function retryCaseNode(
     return;
   }
 
-  await apiFetch(`/api/cases/${caseId}/retry`, {
+  await apiFetch(`/api/tickets/${caseId}/resolve`, {
     method: "POST",
     body: { node },
   });

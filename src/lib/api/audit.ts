@@ -268,5 +268,5 @@ export async function getAuditEvents(
   if (options.caseId) params.set("caseId", options.caseId);
   if (options.tenant) params.set("tenant", options.tenant);
 
-  return apiFetch<AuditRecord[]>(`/api/audit?${params.toString()}`);
+  return apiFetch<AuditRecord[]>(`/api/audit-logs?${params.toString()}`);
 }

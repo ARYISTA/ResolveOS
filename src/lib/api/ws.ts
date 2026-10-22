@@ -127,9 +127,17 @@ export function subscribeToCaseEvents(
           const parsed = WsEvent.safeParse(raw);
           if (parsed.success) {
             onEvent(parsed.data);
+          } else {
+            // Drop and log (dev only) any message that fails validation
+            if (process.env.NODE_ENV === "development") {
+              console.warn("[WS Dropped invalid frame]", parsed.error.issues);
+            }
           }
         } catch {
-          // Malformed frame — ignore
+          // Malformed JSON frame — drop and log dev only
+          if (process.env.NODE_ENV === "development") {
+            console.warn("[WS Dropped unparseable frame]");
+          }
         }
       });
 
@@ -195,9 +203,15 @@ export function subscribeToIngestion(
       const parsed = WsEvent.safeParse(raw);
       if (parsed.success) {
         onEvent(parsed.data);
+      } else {
+        if (process.env.NODE_ENV === "development") {
+          console.warn("[WS Dropped invalid ingestion frame]", parsed.error.issues);
+        }
       }
     } catch {
-      // Malformed frame — ignore
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[WS Dropped unparseable ingestion frame]");
+      }
     }
   });
 
@@ -232,9 +246,15 @@ export function subscribeToEscalations(
       const parsed = WsEvent.safeParse(raw);
       if (parsed.success) {
         onEvent(parsed.data);
+      } else {
+        if (process.env.NODE_ENV === "development") {
+          console.warn("[WS Dropped invalid escalation frame]", parsed.error.issues);
+        }
       }
     } catch {
-      // Malformed frame — ignore
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[WS Dropped unparseable escalation frame]");
+      }
     }
   });
 

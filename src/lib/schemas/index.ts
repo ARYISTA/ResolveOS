@@ -224,6 +224,11 @@ export interface AppState {
   role: Role;
   mode: Mode;
   theme: Theme;
+  apiBaseUrl: string;
+  wsUrl: string;
+  fallbackActive: boolean;
+  latencySpeed: "fast" | "normal" | "slow";
+  forceEscalation: boolean;
 }
 
 export type AppAction =
@@ -231,7 +236,11 @@ export type AppAction =
   | { type: "SET_COMPANY"; companyId: string }
   | { type: "SET_ROLE"; role: Role }
   | { type: "SET_MODE"; mode: Mode }
-  | { type: "SET_THEME"; theme: Theme };
+  | { type: "SET_THEME"; theme: Theme }
+  | { type: "SET_ENDPOINTS"; apiBaseUrl: string; wsUrl: string }
+  | { type: "SET_FALLBACK"; active: boolean }
+  | { type: "SET_LATENCY_SPEED"; speed: "fast" | "normal" | "slow" }
+  | { type: "SET_FORCE_ESCALATION"; enabled: boolean };
 
 // ─── Case record types ────────────────────────────────────────────────────────
 

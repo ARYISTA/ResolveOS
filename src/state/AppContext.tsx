@@ -11,8 +11,9 @@ import React, {
 import Link from "next/link";
 import { X, AlertTriangle, CheckCircle2, Info, ArrowRight } from "lucide-react";
 import type { AppState, AppAction } from "@/lib/schemas";
+import { configureClient, login, onAuthExpired } from "@/lib/api/client";
+import { configureWs, subscribeToEscalations } from "@/lib/api/ws";
 import { getEscalations } from "@/lib/api/cases";
-import { subscribeToEscalations } from "@/lib/api/ws";
 
 // ─── Toast Types ─────────────────────────────────────────────────────────────
 
@@ -34,6 +35,11 @@ const initialState: AppState = {
   role: "admin",
   mode: "mock",
   theme: "light",
+  apiBaseUrl: "http://localhost:8080",
+  wsUrl: "ws://localhost:8080",
+  fallbackActive: false,
+  latencySpeed: "normal",
+  forceEscalation: false,
 };
 
 function appReducer(state: AppState, action: AppAction): AppState {
@@ -48,6 +54,14 @@ function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, mode: action.mode };
     case "SET_THEME":
       return { ...state, theme: action.theme };
+    case "SET_ENDPOINTS":
+      return { ...state, apiBaseUrl: action.apiBaseUrl, wsUrl: action.wsUrl };
+    case "SET_FALLBACK":
+      return { ...state, fallbackActive: action.active };
+    case "SET_LATENCY_SPEED":
+      return { ...state, latencySpeed: action.speed };
+    case "SET_FORCE_ESCALATION":
+      return { ...state, forceEscalation: action.enabled };
   }
 }
 
@@ -159,6 +173,47 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, [showToast]);
 
+  // Keep HTTP client and WebSocket URLs synchronized with state
+  useEffect(() => {
+    configureClient(state.mode, state.apiBaseUrl);
+    configureWs(state.wsUrl);
+  }, [state.mode, state.apiBaseUrl, state.wsUrl]);
+
+  // In-memory authentication re-login dialog state (PRD Section 11 & Task)
+  const [reloginOpen, setReloginOpen] = useState(false);
+  const [reloginUser, setReloginUser] = useState("admin");
+  const [reloginPass, setReloginPass] = useState("");
+  const [reloginLoading, setReloginLoading] = useState(false);
+  const [reloginError, setReloginError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsub = onAuthExpired(() => {
+      setReloginOpen(true);
+      setReloginError("Your session token has expired. Please re-authenticate.");
+    });
+    return unsub;
+  }, []);
+
+  const handleRelogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setReloginLoading(true);
+    setReloginError(null);
+    try {
+      await login(reloginUser, reloginPass);
+      setReloginOpen(false);
+      setReloginPass("");
+      showToast({
+        title: "Session restored",
+        message: "Successfully re-authenticated with backend.",
+        type: "success",
+      });
+    } catch (err) {
+      setReloginError(err instanceof Error ? err.message : "Authentication failed");
+    } finally {
+      setReloginLoading(false);
+    }
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -171,7 +226,210 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         dismissToast,
       }}
     >
+      {/* ─── Offline / Backend Unreachable Fallback Banner (PRD 11) ────────── */}
+      {state.fallbackActive && (
+        <aside
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "sticky",
+            top: 0,
+            zIndex: 9998,
+            background: "var(--warning-soft)",
+            borderBottom: "1px solid var(--warning)",
+            padding: "8px 24px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            fontSize: 13,
+            color: "var(--text)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <AlertTriangle size={16} color="var(--warning)" />
+            <span>
+              <strong>Fallback active:</strong> Live backend at {state.apiBaseUrl} is unreachable. Operating in Mock mode.
+            </span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <Link
+              href="/settings"
+              style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: "var(--accent)",
+                textDecoration: "underline",
+              }}
+            >
+              Check settings
+            </Link>
+            <button
+              type="button"
+              onClick={() => dispatch({ type: "SET_FALLBACK", active: false })}
+              aria-label="Dismiss fallback notification"
+              style={{
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                padding: 4,
+                color: "var(--text-muted)",
+              }}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </aside>
+      )}
+
       {children}
+
+      {/* ─── Non-disruptive Re-login Dialog (PRD Section 11) ───────────────── */}
+      {reloginOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="relogin-title"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 10000,
+            background: "rgba(0, 0, 0, 0.5)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            style={{
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: 12,
+              padding: 24,
+              maxWidth: 400,
+              width: "100%",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+            }}
+          >
+            <h3 id="relogin-title" style={{ margin: "0 0 8px 0", fontSize: 18 }}>
+              Authentication required
+            </h3>
+            <p style={{ fontSize: 13, color: "var(--text-muted)", margin: "0 0 16px 0", lineHeight: 1.5 }}>
+              Your live session token has expired. Enter your credentials to continue without losing your current screen state.
+            </p>
+
+            {reloginError && (
+              <div
+                role="alert"
+                style={{
+                  background: "var(--danger-soft)",
+                  border: "1px solid var(--danger)",
+                  borderRadius: 6,
+                  padding: "8px 12px",
+                  fontSize: 12,
+                  color: "var(--danger)",
+                  marginBottom: 16,
+                }}
+              >
+                {reloginError}
+              </div>
+            )}
+
+            <form onSubmit={handleRelogin} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 4 }}>
+                  Username
+                </label>
+                <input
+                  type="text"
+                  value={reloginUser}
+                  onChange={(e) => setReloginUser(e.target.value)}
+                  required
+                  style={{
+                    width: "100%",
+                    height: 36,
+                    padding: "0 10px",
+                    borderRadius: 6,
+                    border: "1px solid var(--border)",
+                    background: "var(--bg)",
+                    color: "var(--text)",
+                    fontSize: 13,
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 500, marginBottom: 4 }}>
+                  Password
+                </label>
+                <input
+                  type="password"
+                  value={reloginPass}
+                  onChange={(e) => setReloginPass(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  autoFocus
+                  style={{
+                    width: "100%",
+                    height: 36,
+                    padding: "0 10px",
+                    borderRadius: 6,
+                    border: "1px solid var(--border)",
+                    background: "var(--bg)",
+                    color: "var(--text)",
+                    fontSize: 13,
+                  }}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: 10, marginTop: 8, justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReloginOpen(false);
+                    dispatch({ type: "SET_MODE", mode: "mock" });
+                    showToast({
+                      title: "Switched to Mock",
+                      message: "Operating in offline Mock mode.",
+                      type: "info",
+                    });
+                  }}
+                  style={{
+                    height: 36,
+                    padding: "0 14px",
+                    borderRadius: 6,
+                    border: "1px solid var(--border)",
+                    background: "transparent",
+                    color: "var(--text-muted)",
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  Switch to Mock
+                </button>
+                <button
+                  type="submit"
+                  disabled={reloginLoading}
+                  style={{
+                    height: 36,
+                    padding: "0 16px",
+                    borderRadius: 6,
+                    border: "none",
+                    background: "var(--accent)",
+                    color: "#ffffff",
+                    fontSize: 13,
+                    fontWeight: 500,
+                    cursor: reloginLoading ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {reloginLoading ? "Authenticating..." : "Log in"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ─── Global Toasts Container (bottom-right per design.md) ────────── */}
       <div
