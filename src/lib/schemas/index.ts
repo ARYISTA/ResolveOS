@@ -107,6 +107,8 @@ export const WsHitlResolved = z.object({
   caseId: z.string(),
   decision: z.enum(["APPROVED", "REJECTED"]),
   reviewer: z.string(),
+  modifiedAmount: z.number().optional(),
+  reason: z.string().optional(),
 });
 
 export const WsCaseCompleted = z.object({
@@ -114,6 +116,7 @@ export const WsCaseCompleted = z.object({
   caseId: z.string(),
   verdict: Verdict,
   refundRef: z.string().optional(),
+  approvedAmount: z.number().optional(),
 });
 
 export const WsAuditEvent = z.object({
@@ -122,6 +125,8 @@ export const WsAuditEvent = z.object({
   action: z.string(),
   actor: z.string(),
   ts: z.string(),
+  oldState: z.string().optional(),
+  newState: z.string().optional(),
 });
 
 export const WsEvent = z.discriminatedUnion("type", [
@@ -148,6 +153,8 @@ export const ScenarioPreset = z.object({
   requestedAmount: z.number(),
   // Whether the mock engine should trigger HITL for this preset
   triggersHitl: z.boolean(),
+  failNode: NodeName.optional(),
+  hitlModifiedAmount: z.number().optional(),
 });
 export type ScenarioPreset = z.infer<typeof ScenarioPreset>;
 
@@ -176,6 +183,7 @@ export const DomainConfig = z.object({
   icon: z.string(),
   description: z.string(),
   exampleScenarios: z.tuple([z.string(), z.string()]),
+  slaMinutes: z.number().optional(),
   companies: z.array(
     z.object({
       id: z.string(),
@@ -216,6 +224,11 @@ export interface AppState {
   role: Role;
   mode: Mode;
   theme: Theme;
+  apiBaseUrl: string;
+  wsUrl: string;
+  fallbackActive: boolean;
+  latencySpeed: "fast" | "normal" | "slow";
+  forceEscalation: boolean;
 }
 
 export type AppAction =
@@ -223,7 +236,11 @@ export type AppAction =
   | { type: "SET_COMPANY"; companyId: string }
   | { type: "SET_ROLE"; role: Role }
   | { type: "SET_MODE"; mode: Mode }
-  | { type: "SET_THEME"; theme: Theme };
+  | { type: "SET_THEME"; theme: Theme }
+  | { type: "SET_ENDPOINTS"; apiBaseUrl: string; wsUrl: string }
+  | { type: "SET_FALLBACK"; active: boolean }
+  | { type: "SET_LATENCY_SPEED"; speed: "fast" | "normal" | "slow" }
+  | { type: "SET_FORCE_ESCALATION"; enabled: boolean };
 
 // ─── Case record types ────────────────────────────────────────────────────────
 
@@ -237,14 +254,21 @@ export interface CaseRecord {
   transactionId: string;
   transactionAmount: number;
   requestedAmount: number;
+  approvedAmount?: number;
+  rejectionReason?: string;
   message: string;
   presetId?: string;
   presetTag?: "Valid" | "Edge case" | "Needs human" | "Attack";
   triggersHitl: boolean;
+  failNode?: NodeName;
+  hitlModifiedAmount?: number;
   status: "OPEN" | "PROCESSING" | "RESOLVED" | "ESCALATED" | "REJECTED";
   createdAt: string;
   traceId: string;
   attachmentName?: string;
+  escalationReason?: string;
+  riskLevel?: Risk;
+  outcome?: Verdict;
 }
 
 export interface CreateCaseInput {
@@ -260,6 +284,221 @@ export interface CreateCaseInput {
   presetId?: string;
   presetTag?: "Valid" | "Edge case" | "Needs human" | "Attack";
   triggersHitl: boolean;
+  failNode?: NodeName;
+  hitlModifiedAmount?: number;
   attachmentName?: string;
 }
+
+// ─── Review Action Schemas ───────────────────────────────────────────────────
+
+export const ReviewApproveModifiedSchema = z.object({
+  modifiedAmount: z.number().positive("Amount must be greater than 0"),
+});
+export type ReviewApproveModifiedInput = z.infer<
+  typeof ReviewApproveModifiedSchema
+>;
+
+export const ReviewRejectSchema = z.object({
+  comment: z
+    .string()
+    .min(10, "Comment is required and must be at least 10 characters"),
+});
+export type ReviewRejectInput = z.infer<typeof ReviewRejectSchema>;
+
+// ─── Case List Query & Results ───────────────────────────────────────────────
+
+export interface CaseQueryOptions {
+  companyId?: string;
+  domain?: Domain;
+  status?: "OPEN" | "PROCESSING" | "RESOLVED" | "ESCALATED" | "REJECTED";
+  risk?: Risk;
+  outcome?: Verdict;
+  search?: string;
+  customer?: string;
+  fromDate?: string;
+  toDate?: string;
+  sortBy?: "amount" | "date" | "status";
+  sortOrder?: "asc" | "desc";
+  page?: number;
+  limit?: number;
+}
+
+export interface CaseListResult {
+  cases: CaseRecord[];
+  totalCount: number;
+  page: number;
+  totalPages: number;
+  limit: number;
+}
+
+// ─── Dashboard Metrics ────────────────────────────────────────────────────────
+
+export interface DashboardMetrics {
+  totalCases: number;
+  autoResolved: number;
+  escalated: number;
+  rejected: number;
+  totalRefunded: number;
+  avgResolutionTimeMs: number;
+  casesByOutcome: {
+    outcome: string;
+    label: string;
+    count: number;
+    percentage: number;
+    color: string;
+  }[];
+  casesOverTime: {
+    date: string;
+    count: number;
+  }[];
+  stageLatencies: {
+    stage: NodeName;
+    label: string;
+    latencyMs: number;
+  }[];
+}
+
+// ─── Policy Library & Viewer ──────────────────────────────────────────────────
+
+export interface PolicyVersion {
+  version: number;
+  updatedAt: string;
+  chunkCount: number;
+  filePath: string;
+  fileSizeKb: number;
+  active: boolean;
+}
+
+export interface PolicyChunk {
+  id: string;
+  section: string;
+  page: number;
+  tokenCount: number;
+  excerpt: string;
+}
+
+export interface PolicyRecord {
+  id: string;
+  name: string;
+  companyId: string;
+  companyName: string;
+  domain: Domain;
+  currentVersion: number;
+  versions: PolicyVersion[];
+  chunks: PolicyChunk[];
+  createdAt: string;
+}
+
+// ─── Audit Log (PRD 6.9) ──────────────────────────────────────────────────────
+
+export type AuditActionType =
+  | "CASE_CREATED"
+  | "POLICY_RETRIEVED"
+  | "AI_DECISION_GENERATED"
+  | "RULE_CHECKED"
+  | "HITL_TRIGGERED"
+  | "HUMAN_APPROVED"
+  | "REFUND_EXECUTED"
+  | "REFUND_FAILED";
+
+export type AuditActorType = "AI" | "System" | "Human" | "Customer";
+
+export interface AuditRecord {
+  id: string;
+  ts: string;
+  tenant: string;
+  caseId: string;
+  actor: string;
+  actorType: AuditActorType;
+  action: AuditActionType;
+  oldState: string;
+  newState: string;
+  traceId: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface AuditQueryOptions {
+  action?: AuditActionType | "ALL";
+  actorType?: AuditActorType | "ALL";
+  caseId?: string;
+  tenant?: string;
+  page?: number;
+  limit?: number;
+}
+
+// ─── Security Lab (PRD 6.10) ──────────────────────────────────────────────────
+
+export type SecurityLayer =
+  | "LLM guard"
+  | "Schema validation"
+  | "Policy enforcement"
+  | "Tenant isolation";
+
+export interface SecurityAttackPreset {
+  id: string;
+  title: string;
+  category: string;
+  description: string;
+  attackPayload: string;
+  expectedLayer: SecurityLayer;
+  expectedResult: string;
+}
+
+export interface SecurityAttackResult {
+  attackId: string;
+  caseId: string;
+  layerCaught: SecurityLayer;
+  verdict: Verdict;
+  blocked: boolean;
+  reason: string;
+  executedAt: string;
+  traceId: string;
+}
+
+export interface SecurityLayerSummary {
+  layer: SecurityLayer;
+  attacksRun: number;
+  blocked: number;
+  leaked: number; // must be 0
+}
+
+export interface SecurityLabSummary {
+  totalRun: number;
+  totalBlocked: number;
+  totalLeaked: number;
+  layerSummaries: SecurityLayerSummary[];
+}
+
+// ─── Architecture Comparison (PRD 6.11) ───────────────────────────────────────
+
+export type ComparisonApproach =
+  | "Manual"
+  | "Rules-only"
+  | "Pure LLM"
+  | "RAG-only"
+  | "Hybrid (proposed)";
+
+export interface ApproachResult {
+  approach: ComparisonApproach;
+  decision: Decision;
+  amount: number;
+  isCorrect: boolean;
+  latencyMs: number;
+  estimatedCostUsd: number;
+  citationPresent: boolean;
+  unsafeAction: boolean;
+  notes: string;
+}
+
+export interface ComparisonRunResult {
+  presetId: string;
+  presetLabel: string;
+  groundTruthDecision: Decision;
+  groundTruthAmount: number;
+  results: ApproachResult[];
+  aggregateAccuracyPercent: number;
+}
+
+
+
 

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { useApp } from "@/state/AppContext";
 
 const NAV_ITEMS = [
   { href: "/", label: "Domains", icon: LayoutDashboard },
@@ -34,6 +35,7 @@ const NAV_ITEMS = [
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const { escalationCount } = useApp();
 
   return (
     <aside
@@ -124,6 +126,23 @@ export function Sidebar() {
             >
               <Icon size={18} strokeWidth={1.5} style={{ flexShrink: 0 }} />
               {!collapsed && <span>{label}</span>}
+              {!collapsed && label === "Reviews" && escalationCount > 0 && (
+                <span
+                  style={{
+                    marginLeft: "auto",
+                    padding: "1px 6px",
+                    borderRadius: 999,
+                    background: "var(--warning-soft)",
+                    color: "var(--warning)",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    fontFamily: "var(--font-mono)",
+                    border: "1px solid var(--warning)",
+                  }}
+                >
+                  {escalationCount}
+                </span>
+              )}
             </Link>
           );
         })}

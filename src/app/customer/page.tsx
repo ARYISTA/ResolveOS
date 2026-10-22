@@ -155,6 +155,8 @@ export default function CustomerSimulatorPage() {
       presetId: selectedPresetId || undefined,
       presetTag: currentPreset?.tag,
       triggersHitl,
+      failNode: currentPreset?.failNode,
+      hitlModifiedAmount: currentPreset?.hitlModifiedAmount,
       attachmentName: attachmentName || undefined,
     });
 

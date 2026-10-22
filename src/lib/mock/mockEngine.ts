@@ -6,6 +6,7 @@
  *
  * Safe case: runs all nodes, ends with ALLOW.
  * High-risk case: pauses at HUMAN_REVIEW until approve() or reject() is called.
+ * Edge/attack cases: can trigger NODE_FAILED with interactive retry.
  *
  * Components never call this directly — they go through lib/api/ws.ts.
  */
@@ -41,21 +42,27 @@ const NODE_DURATION: Record<NodeName, number> = {
 const NODE_OUTPUT: Record<NodeName, Record<string, unknown>> = {
   INTAKE: {
     intent: "refund_request",
-    entities: { amount: null, reason: "Customer dispute regarding failed or incorrect debit" },
+    entities: {
+      amount: null,
+      reason: "Customer dispute regarding failed or incorrect debit",
+    },
     confidence: 0.94,
-    summary: "Customer refund request parsed and intent classified as dispute reversal.",
+    summary:
+      "Customer refund request parsed and intent classified as dispute reversal.",
   },
   VALIDATION: {
     transactionExists: true,
     belongsToCustomer: true,
     withinWindow: true,
     alreadyRefunded: false,
-    summary: "Transaction confirmed: authentic, linked to customer, and within dispute SLA window.",
+    summary:
+      "Transaction confirmed: authentic, linked to customer, and within dispute SLA window.",
   },
   POLICY_RETRIEVAL: {
     chunksRetrieved: 3,
     topScore: 0.93,
-    summary: "Retrieved 3 policy clauses from indexed refund and dispute policy.",
+    summary:
+      "Retrieved 3 policy clauses from indexed refund and dispute policy.",
     citations: [
       {
         policyId: "pol-banking-v1",
@@ -102,44 +109,102 @@ const NODE_OUTPUT: Record<NodeName, Record<string, unknown>> = {
   RISK: {
     level: "LOW",
     score: 0.14,
-    factors: ["Account in good standing", "No prior disputed transactions", "Consistent device fingerprint"],
+    factors: [
+      "Account in good standing",
+      "No prior disputed transactions",
+      "Consistent device fingerprint",
+    ],
     summary: "Risk level assessed as LOW (0.14 anomaly score).",
   },
   ENFORCEMENT: {
     checks: [
-      { rule: "Schema validation", passed: true, reason: "Dispute payload satisfies required schema" },
-      { rule: "Tenant isolation", passed: true, reason: "Tenant authority and customer boundary valid" },
-      { rule: "Policy conditions met", passed: true, reason: "Verified against Clause 3.2 conditions" },
-      { rule: "Amount within limit", passed: true, reason: "Amount is within auto-approve threshold" },
-      { rule: "Transaction validity", passed: true, reason: "Transaction confirmed settled and disputed" },
-      { rule: "Risk acceptable", passed: true, reason: "Risk score below threshold" },
-      { rule: "HITL required", passed: false, reason: "No mandatory human escalation triggers met" },
+      {
+        rule: "Schema valid",
+        passed: true,
+        reason: "Dispute payload satisfies required schema",
+      },
+      {
+        rule: "Tenant valid",
+        passed: true,
+        reason: "Tenant authority and customer boundary valid",
+      },
+      {
+        rule: "Policy conditions met",
+        passed: true,
+        reason: "Verified against Clause 3.2 conditions and TAT requirements",
+      },
+      {
+        rule: "Amount within limit",
+        passed: true,
+        reason: "Amount is within auto-approve threshold",
+      },
+      {
+        rule: "Transaction valid",
+        passed: true,
+        reason: "Transaction confirmed settled and disputed",
+      },
+      {
+        rule: "Risk acceptable",
+        passed: true,
+        reason: "Risk score (0.14) below threshold",
+      },
+      {
+        rule: "HITL required",
+        passed: true,
+        reason: "No mandatory human escalation triggers met",
+      },
     ],
     verdict: "ALLOW",
     summary: "Deterministic guardrails passed 7/7 checks. Verdict: ALLOW.",
   },
-  HUMAN_REVIEW: { reviewer: null, decision: null, summary: "Pending review by compliance officer." },
+  HUMAN_REVIEW: {
+    reviewer: null,
+    decision: null,
+    summary: "Pending review by compliance officer.",
+  },
   EXECUTION: {
     refundRef: `REF-${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
     gatewayStatus: "SUCCESS",
-    summary: "Payment gateway transaction reversed. Credit notification dispatched.",
+    summary:
+      "Payment gateway transaction reversed. Credit notification dispatched.",
   },
 };
 
 // ─── Active sessions ──────────────────────────────────────────────────────────
 
+export interface HitlResolution {
+  decision: "APPROVED" | "REJECTED";
+  modifiedAmount?: number;
+  reason?: string;
+}
+
 interface Session {
   caseId: string;
   triggersHitl: boolean;
+  failNode?: NodeName;
+  hitlModifiedAmount?: number;
   listener: Listener;
-  // For HITL: resolve the paused promise when a human decision arrives
-  hitlResolve?: (decision: "APPROVED" | "REJECTED") => void;
+  hitlResolve?: (res: HitlResolution) => void;
+  retryResolve?: () => void;
+  failedNodesRetried: Set<NodeName>;
   aborted: boolean;
 }
 
 const sessions = new Map<string, Session>();
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+type EscalationListener = (event: WsEvent) => void;
+const escalationListeners = new Set<EscalationListener>();
+
+export function subscribeMockEscalations(
+  listener: EscalationListener
+): () => void {
+  escalationListeners.add(listener);
+  return () => {
+    escalationListeners.delete(listener);
+  };
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -148,6 +213,15 @@ function sleep(ms: number): Promise<void> {
 function emit(session: Session, event: WsEvent): void {
   if (!session.aborted) {
     session.listener(event);
+  }
+  if (event.type === "HITL_REQUIRED" || event.type === "HITL_RESOLVED") {
+    escalationListeners.forEach((listener) => {
+      try {
+        listener(event);
+      } catch {
+        // ignore
+      }
+    });
   }
 }
 
@@ -164,28 +238,176 @@ async function runPipeline(session: Session): Promise<void> {
   for (const node of NODES) {
     if (session.aborted) return;
 
+    // Check if node is configured to fail and hasn't been retried
+    if (session.failNode === node && !session.failedNodesRetried.has(node)) {
+      emit(session, { type: "NODE_STARTED", caseId, node, ts: now() });
+      await sleep(NODE_DURATION[node]);
+      if (session.aborted) return;
+
+      emit(session, {
+        type: "NODE_FAILED",
+        caseId,
+        node,
+        error: `Vector index timeout: unable to fetch policy chunks for ${node}. Service responded with HTTP 504 Gateway Timeout.`,
+      });
+
+      emit(session, {
+        type: "AUDIT_EVENT",
+        caseId,
+        action: `${node}_EXECUTION_FAILED`,
+        actor: "system",
+        ts: now(),
+        oldState: "RUNNING",
+        newState: "FAILED",
+      });
+
+      // Pause pipeline until retryMockNode is invoked
+      await new Promise<void>((resolve) => {
+        session.retryResolve = resolve;
+      });
+      if (session.aborted) return;
+
+      session.failedNodesRetried.add(node);
+    }
+
     emit(session, { type: "NODE_STARTED", caseId, node, ts: now() });
 
     await sleep(NODE_DURATION[node]);
     if (session.aborted) return;
 
-    // Override RISK output for high-risk preset
+    // Calculate audit state transitions
+    const oldState =
+      node === "INTAKE"
+        ? "PENDING"
+        : node === "VALIDATION"
+        ? "PARSED"
+        : node === "POLICY_RETRIEVAL"
+        ? "VALIDATED"
+        : node === "DECISION"
+        ? "POLICIES_RETRIEVED"
+        : node === "RISK"
+        ? "RECOMMENDED"
+        : triggersHitl
+        ? "HIGH_RISK"
+        : "LOW_RISK";
+
+    const newState =
+      node === "INTAKE"
+        ? "PARSED"
+        : node === "VALIDATION"
+        ? "VALIDATED"
+        : node === "POLICY_RETRIEVAL"
+        ? "POLICIES_RETRIEVED"
+        : node === "DECISION"
+        ? "RECOMMENDED"
+        : node === "RISK"
+        ? triggersHitl
+          ? "HIGH_RISK"
+          : "LOW_RISK"
+        : triggersHitl
+        ? "ESCALATED"
+        : "GUARDRAILS_PASSED";
+
+    // Dynamic output per node based on scenario
     const output =
       node === "RISK" && triggersHitl
-        ? { level: "HIGH" as Risk, factors: ["Large amount", "First dispute"] }
+        ? {
+            level: "HIGH" as Risk,
+            score: 0.82,
+            factors: [
+              "Dispute amount exceeds high-value threshold",
+              "First dispute on this merchant category",
+              "Dual-control compliance verification mandated",
+            ],
+            summary: "Risk level assessed as HIGH (0.82 anomaly score).",
+          }
+        : node === "POLICY_RETRIEVAL" && triggersHitl
+        ? {
+            chunksRetrieved: 3,
+            topScore: 0.95,
+            summary:
+              "Retrieved 3 regulatory & dispute escalation policy clauses.",
+            citations: [
+              {
+                policyId: "pol-banking-v1",
+                version: 1,
+                documentName: "High-Value Transaction Safeguards v1.2",
+                page: 12,
+                section: "Section 4.1 Tier-2 Discretionary Thresholds",
+                chunkId: "chk-08",
+                excerpt:
+                  "Disputed transactions exceeding ₹20,000 shall be subject to mandatory dual-officer compliance verification before any debit reversal or ledger write-back.",
+                score: 0.95,
+              },
+              {
+                policyId: "pol-banking-v1",
+                version: 1,
+                documentName: "Refund & Dispute Policy v1.4",
+                page: 7,
+                section: "Section 3.4 Disputed Liability Apportionment",
+                chunkId: "chk-05",
+                excerpt:
+                  "Where partial liability or suspicious telemetry is indicated, the compliance reviewer holds discretion to adjust approved reimbursement down to verified merchant loss amount.",
+                score: 0.91,
+              },
+              {
+                policyId: "pol-banking-v1",
+                version: 1,
+                documentName: "Fraud Risk & Governance Framework",
+                page: 15,
+                section: "Section 6.2 Customer Protection TAT",
+                chunkId: "chk-11",
+                excerpt:
+                  "Immediate provisional credit is restricted for transactions flagged by autonomous anti-fraud heuristics pending secondary human attestation.",
+                score: 0.86,
+              },
+            ],
+          }
         : node === "ENFORCEMENT" && triggersHitl
         ? {
             ...NODE_OUTPUT.ENFORCEMENT,
             checks: [
-              { rule: "Schema valid", passed: true },
-              { rule: "Tenant valid", passed: true },
-              { rule: "Policy conditions met", passed: true },
-              { rule: "Amount within limit", passed: false },
-              { rule: "Transaction valid", passed: true },
-              { rule: "Risk acceptable", passed: false },
-              { rule: "HITL required", passed: true },
+              {
+                rule: "Schema valid",
+                passed: true,
+                reason: "Dispute payload conforms to standard specification",
+              },
+              {
+                rule: "Tenant valid",
+                passed: true,
+                reason: "Dispute belongs to authenticated tenant context",
+              },
+              {
+                rule: "Policy conditions met",
+                passed: true,
+                reason:
+                  "Customer dispute notification within valid reporting window",
+              },
+              {
+                rule: "Amount within limit",
+                passed: false,
+                reason:
+                  "Requested amount exceeds maximum autonomous approval threshold",
+              },
+              {
+                rule: "Transaction valid",
+                passed: true,
+                reason: "Transaction settlement record verified on core ledger",
+              },
+              {
+                rule: "Risk acceptable",
+                passed: false,
+                reason: "Anomaly detection engine flagged elevated dispute risk",
+              },
+              {
+                rule: "HITL required",
+                passed: false,
+                reason: "Mandatory human compliance escalation triggered",
+              },
             ],
             verdict: "ESCALATE",
+            summary:
+              "Deterministic guardrails flagged 3/7 checks. Escalated for human oversight.",
           }
         : NODE_OUTPUT[node];
 
@@ -203,12 +425,16 @@ async function runPipeline(session: Session): Promise<void> {
       action: `${node}_COMPLETED`,
       actor: "system",
       ts: now(),
+      oldState,
+      newState,
     });
   }
 
   if (session.aborted) return;
 
   // ─── HITL branch ─────────────────────────────────────────────────────────
+  let humanResolution: HitlResolution = { decision: "APPROVED" };
+
   if (triggersHitl) {
     emit(session, {
       type: "HITL_REQUIRED",
@@ -218,26 +444,36 @@ async function runPipeline(session: Session): Promise<void> {
     });
 
     emit(session, {
+      type: "AUDIT_EVENT",
+      caseId,
+      action: "ESCALATION_TRIGGERED",
+      actor: "system",
+      ts: now(),
+      oldState: "ESCALATED",
+      newState: "WAITING_FOR_HUMAN",
+    });
+
+    emit(session, {
       type: "NODE_STARTED",
       caseId,
       node: "HUMAN_REVIEW",
       ts: now(),
     });
 
-    // Pause until a human decision arrives
-    const humanDecision = await new Promise<"APPROVED" | "REJECTED">(
-      (resolve) => {
-        session.hitlResolve = resolve;
-      }
-    );
+    // Pause until human reviewer submits decision
+    humanResolution = await new Promise<HitlResolution>((resolve) => {
+      session.hitlResolve = resolve;
+    });
 
     if (session.aborted) return;
 
     emit(session, {
       type: "HITL_RESOLVED",
       caseId,
-      decision: humanDecision,
+      decision: humanResolution.decision,
       reviewer: "demo-reviewer",
+      modifiedAmount: humanResolution.modifiedAmount,
+      reason: humanResolution.reason,
     });
 
     emit(session, {
@@ -245,15 +481,57 @@ async function runPipeline(session: Session): Promise<void> {
       caseId,
       node: "HUMAN_REVIEW",
       durationMs: 0,
-      output: { decision: humanDecision, reviewer: "demo-reviewer" },
+      output: {
+        decision: humanResolution.decision,
+        reviewer: "demo-reviewer",
+        ...(humanResolution.modifiedAmount !== undefined
+          ? { modifiedAmount: humanResolution.modifiedAmount }
+          : {}),
+        ...(humanResolution.reason
+          ? { reason: humanResolution.reason }
+          : {}),
+        summary:
+          humanResolution.decision === "APPROVED"
+            ? `Human reviewer approved dispute${
+                humanResolution.modifiedAmount !== undefined
+                  ? ` (adjusted amount: ₹${humanResolution.modifiedAmount})`
+                  : ""
+              }.`
+            : `Human reviewer rejected dispute: ${humanResolution.reason || "Dispute claim denied."}`,
+      },
     });
 
-    if (humanDecision === "REJECTED") {
+    emit(session, {
+      type: "AUDIT_EVENT",
+      caseId,
+      action:
+        humanResolution.decision === "APPROVED"
+          ? "HUMAN_APPROVAL"
+          : "HUMAN_REJECTION",
+      actor: "demo-reviewer",
+      ts: now(),
+      oldState: "WAITING_FOR_HUMAN",
+      newState:
+        humanResolution.decision === "APPROVED" ? "APPROVED" : "REJECTED",
+    });
+
+    if (humanResolution.decision === "REJECTED") {
       emit(session, {
         type: "CASE_COMPLETED",
         caseId,
         verdict: "DENY",
       });
+
+      emit(session, {
+        type: "AUDIT_EVENT",
+        caseId,
+        action: "CASE_CLOSED_DENIED",
+        actor: "system",
+        ts: now(),
+        oldState: "REJECTED",
+        newState: "DENIED",
+      });
+
       sessions.delete(caseId);
       return;
     }
@@ -272,11 +550,24 @@ async function runPipeline(session: Session): Promise<void> {
     caseId,
     node: "EXECUTION",
     durationMs: NODE_DURATION.EXECUTION,
-    output: { refundRef, gatewayStatus: "SUCCESS" },
+    output: {
+      refundRef,
+      gatewayStatus: "SUCCESS",
+      ...(humanResolution.modifiedAmount !== undefined
+        ? { approvedAmount: humanResolution.modifiedAmount }
+        : {}),
+      summary: `Payment gateway reversal confirmed. Transaction ref: ${refundRef}.`,
+    },
   });
 
-  const verdict: Verdict = triggersHitl ? "ALLOW" : "ALLOW";
-  emit(session, { type: "CASE_COMPLETED", caseId, verdict, refundRef });
+  const verdict: Verdict = "ALLOW";
+  emit(session, {
+    type: "CASE_COMPLETED",
+    caseId,
+    verdict,
+    refundRef,
+    approvedAmount: humanResolution.modifiedAmount,
+  });
 
   emit(session, {
     type: "AUDIT_EVENT",
@@ -284,6 +575,8 @@ async function runPipeline(session: Session): Promise<void> {
     action: "REFUND_EXECUTED",
     actor: "transaction-service",
     ts: now(),
+    oldState: "APPROVED",
+    newState: "COMPLETED",
   });
 
   sessions.delete(caseId);
@@ -296,14 +589,22 @@ async function runPipeline(session: Session): Promise<void> {
  * onEvent is called for every WS event in order.
  */
 export function startMockCase(
-  opts: { caseId?: string; triggersHitl?: boolean },
+  opts: {
+    caseId?: string;
+    triggersHitl?: boolean;
+    failNode?: NodeName;
+    hitlModifiedAmount?: number;
+  },
   onEvent: Listener
 ): string {
   const caseId = opts.caseId ?? crypto.randomUUID();
   const session: Session = {
     caseId,
     triggersHitl: opts.triggersHitl ?? false,
+    failNode: opts.failNode,
+    hitlModifiedAmount: opts.hitlModifiedAmount,
     listener: onEvent,
+    failedNodesRetried: new Set(),
     aborted: false,
   };
   sessions.set(caseId, session);
@@ -316,11 +617,28 @@ export function startMockCase(
  */
 export function resolveHitl(
   caseId: string,
-  decision: "APPROVED" | "REJECTED"
+  resolution: HitlResolution | "APPROVED" | "REJECTED"
 ): void {
   const session = sessions.get(caseId);
   if (session?.hitlResolve) {
-    session.hitlResolve(decision);
+    if (typeof resolution === "string") {
+      session.hitlResolve({ decision: resolution });
+    } else {
+      session.hitlResolve(resolution);
+    }
+  }
+}
+
+/**
+ * Retry a failed pipeline node in mock mode.
+ */
+export function retryMockNode(caseId: string, node?: NodeName): void {
+  void node;
+  const session = sessions.get(caseId);
+  if (session?.retryResolve) {
+    const resolve = session.retryResolve;
+    session.retryResolve = undefined;
+    resolve();
   }
 }
 
@@ -385,4 +703,3 @@ export function abortMockIngestion(policyId: string): void {
     ingestionSessions.delete(policyId);
   }
 }
-
