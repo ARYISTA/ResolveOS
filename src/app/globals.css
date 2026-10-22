@@ -1,0 +1,194 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Design tokens from design.md ─────────────────────────────────────────── */
+
+:root {
+  /* surfaces */
+  --bg:            #F5F0E8;
+  --surface:       #FBF8F3;
+  --surface-2:     #EFE8DC;
+  --sidebar:       #EFE8DC;
+  --border:        #E3D9CA;
+  --border-strong: #CFC2AF;
+
+  /* text */
+  --text:          #2B211B;
+  --text-muted:    #7A6A5C;
+  --text-faint:    #A39482;
+
+  /* brand / accent (brown) */
+  --accent:        #8B5E3C;
+  --accent-hover:  #744C2F;
+  --accent-soft:   #EADBC8;
+  --on-accent:     #FBF8F3;
+
+  /* status */
+  --success:       #5B7F4F;  --success-soft: #E3EBDD;
+  --warning:       #B7791F;  --warning-soft: #F3E6CC;
+  --danger:        #A94438;  --danger-soft:  #F1DAD6;
+
+  /* pipeline layer badges */
+  --layer-ai:                 #5C6F82;  --layer-ai-soft:            #DFE5EB;
+  --layer-deterministic:      #6B6258;  --layer-deterministic-soft: #E4DED5;
+  --layer-human:              #B7791F;  --layer-human-soft:         #F3E6CC;
+  --layer-transaction:        #5B7F4F;  --layer-transaction-soft:   #E3EBDD;
+
+  --focus-ring: #8B5E3C;
+
+  /* typography */
+  --font-sans:  ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-mono:  ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.dark {
+  --bg:            #1C1713;
+  --surface:       #25201A;
+  --surface-2:     #2F2820;
+  --sidebar:       #211C16;
+  --border:        #3A3128;
+  --border-strong: #4A3F33;
+
+  --text:          #F1E9DD;
+  --text-muted:    #B3A593;
+  --text-faint:    #85786A;
+
+  --accent:        #C9936A;
+  --accent-hover:  #D8A57D;
+  --accent-soft:   #3A2E23;
+  --on-accent:     #1C1713;
+
+  --success: #8DB07F;  --success-soft: #26301F;
+  --warning: #D9A74E;  --warning-soft: #352A15;
+  --danger:  #D4786D;  --danger-soft:  #3A211E;
+
+  --layer-ai:                 #8FA3B8;  --layer-ai-soft:            #222B34;
+  --layer-deterministic:      #A59B8F;  --layer-deterministic-soft: #2D2923;
+  --layer-human:              #D9A74E;  --layer-human-soft:         #352A15;
+  --layer-transaction:        #8DB07F;  --layer-transaction-soft:   #26301F;
+}
+
+/* ─── Base styles ───────────────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 24px;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+/* ─── Focus ring ────────────────────────────────────────────────────────────── */
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* ─── Typography scale ──────────────────────────────────────────────────────── */
+
+h1 {
+  font-family: var(--font-serif);
+  font-size: 30px;
+  line-height: 38px;
+  font-weight: 500;
+  margin: 0;
+}
+
+h2 {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  line-height: 30px;
+  font-weight: 500;
+  margin: 0;
+}
+
+h3 {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  margin: 0;
+}
+
+/* ─── Scrollbar ─────────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+}
+
+/* ─── Running node pulse animation ─────────────────────────────────────────── */
+
+@keyframes node-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
+}
+
+.node-running {
+  animation: node-pulse 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node-running {
+    animation: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* ─── Utility: tabular numbers for financial data ───────────────────────────── */
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Domain cards responsive grid (PRD section 6.1) ────────────────────────── */
+
+.domain-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+@media (max-width: 1024px) {
+  .domain-cards-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .domain-cards-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
