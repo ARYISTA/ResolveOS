@@ -259,6 +259,7 @@ export interface CaseRecord {
   attachmentName?: string;
   escalationReason?: string;
   riskLevel?: Risk;
+  outcome?: Verdict;
 }
 
 export interface CreateCaseInput {
@@ -294,5 +295,58 @@ export const ReviewRejectSchema = z.object({
     .min(10, "Comment is required and must be at least 10 characters"),
 });
 export type ReviewRejectInput = z.infer<typeof ReviewRejectSchema>;
+
+// ─── Case List Query & Results ───────────────────────────────────────────────
+
+export interface CaseQueryOptions {
+  companyId?: string;
+  domain?: Domain;
+  status?: "OPEN" | "PROCESSING" | "RESOLVED" | "ESCALATED" | "REJECTED";
+  risk?: Risk;
+  outcome?: Verdict;
+  search?: string;
+  customer?: string;
+  fromDate?: string;
+  toDate?: string;
+  sortBy?: "amount" | "date" | "status";
+  sortOrder?: "asc" | "desc";
+  page?: number;
+  limit?: number;
+}
+
+export interface CaseListResult {
+  cases: CaseRecord[];
+  totalCount: number;
+  page: number;
+  totalPages: number;
+  limit: number;
+}
+
+// ─── Dashboard Metrics ────────────────────────────────────────────────────────
+
+export interface DashboardMetrics {
+  totalCases: number;
+  autoResolved: number;
+  escalated: number;
+  rejected: number;
+  totalRefunded: number;
+  avgResolutionTimeMs: number;
+  casesByOutcome: {
+    outcome: string;
+    label: string;
+    count: number;
+    percentage: number;
+    color: string;
+  }[];
+  casesOverTime: {
+    date: string;
+    count: number;
+  }[];
+  stageLatencies: {
+    stage: NodeName;
+    label: string;
+    latencyMs: number;
+  }[];
+}
 
 
