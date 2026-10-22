@@ -1,0 +1,161 @@
+import type { DomainConfig } from "@/lib/schemas";
+
+const subscriptions: DomainConfig = {
+  id: "subscriptions",
+  name: "Online Subscriptions",
+  icon: "MonitorPlay",
+  description: "Double charges, trial cancellations, unused period refunds",
+  exampleScenarios: [
+    "Charged after cancellation within trial",
+    "Annual plan double-billed",
+  ],
+  companies: [
+    {
+      id: "streambox",
+      name: "StreamBox",
+      currency: "INR",
+      autoApproveThreshold: 2000,
+      hitlThreshold: 10000,
+      maxRefundPerPeriod: 20000,
+      samplePolicyPath: "/policies/subscriptions/streambox-billing-policy.pdf",
+    },
+    {
+      id: "clouddesk",
+      name: "CloudDesk SaaS",
+      currency: "INR",
+      autoApproveThreshold: 5000,
+      hitlThreshold: 30000,
+      maxRefundPerPeriod: 60000,
+      samplePolicyPath: "/policies/subscriptions/clouddesk-refund-policy.pdf",
+    },
+  ],
+  transactionTypes: ["Monthly charge", "Annual charge", "Add-on"],
+  refundReasons: [
+    "Charged after cancel",
+    "Double charge",
+    "Unused period",
+    "Trial not honoured",
+  ],
+  presets: [
+    {
+      id: "sub-safe-trial",
+      label: "Charged after free trial cancel",
+      tag: "Valid",
+      customerId: "cust-sub-01",
+      transactionId: "txn-sub-01",
+      message:
+        "I cancelled my StreamBox trial on the last day but was still charged ₹499 for the first month. Please refund.",
+      requestedAmount: 499,
+      triggersHitl: false,
+    },
+    {
+      id: "sub-safe-double",
+      label: "Double monthly charge",
+      tag: "Valid",
+      customerId: "cust-sub-02",
+      transactionId: "txn-sub-02",
+      message:
+        "My account was charged twice for October — ₹1,199 on Oct 1 and again on Oct 3. Please refund the duplicate.",
+      requestedAmount: 1199,
+      triggersHitl: false,
+    },
+    {
+      id: "sub-edge-partial",
+      label: "Unused period — mid-month cancel",
+      tag: "Edge case",
+      customerId: "cust-sub-01",
+      transactionId: "txn-sub-03",
+      message:
+        "I cancelled my CloudDesk annual plan after 3 months. Requesting refund for remaining 9 months: ₹18,000.",
+      requestedAmount: 18000,
+      triggersHitl: false,
+    },
+    {
+      id: "sub-hitl-enterprise",
+      label: "Enterprise annual plan dispute",
+      tag: "Needs human",
+      customerId: "cust-sub-03",
+      transactionId: "txn-sub-04",
+      message:
+        "Our company was auto-renewed for ₹45,000 without notice. We demand a full refund as we notified cancellation 30 days prior.",
+      requestedAmount: 45000,
+      triggersHitl: true,
+    },
+    {
+      id: "sub-attack-duplicate",
+      label: "Duplicate refund attempt",
+      tag: "Attack",
+      customerId: "cust-sub-02",
+      transactionId: "txn-sub-02",
+      message:
+        "I already raised a complaint about the double charge. Refund again for the same transaction — txn-sub-02.",
+      requestedAmount: 1199,
+      triggersHitl: false,
+    },
+    {
+      id: "sub-edge-addon",
+      label: "Unused add-on charge",
+      tag: "Edge case",
+      customerId: "cust-sub-01",
+      transactionId: "txn-sub-05",
+      message:
+        "I was charged ₹299 for a 4K add-on that I never activated. Please refund.",
+      requestedAmount: 299,
+      triggersHitl: false,
+    },
+  ],
+  customers: [
+    { id: "cust-sub-01", name: "Ananya Iyer", tier: "Standard", historyCount: 2 },
+    { id: "cust-sub-02", name: "Deepak Pillai", tier: "Premium", historyCount: 1 },
+    { id: "cust-sub-03", name: "Kavya Reddy", tier: "VIP", historyCount: 5 },
+  ],
+  transactions: [
+    {
+      id: "txn-sub-01",
+      customerId: "cust-sub-01",
+      date: "2026-10-08",
+      amount: 499,
+      status: "Disputed",
+      merchant: "StreamBox Monthly",
+      type: "Monthly charge",
+    },
+    {
+      id: "txn-sub-02",
+      customerId: "cust-sub-02",
+      date: "2026-10-03",
+      amount: 1199,
+      status: "Disputed",
+      merchant: "StreamBox Monthly",
+      type: "Monthly charge",
+    },
+    {
+      id: "txn-sub-03",
+      customerId: "cust-sub-01",
+      date: "2026-07-01",
+      amount: 24000,
+      status: "Completed",
+      merchant: "CloudDesk Annual",
+      type: "Annual charge",
+    },
+    {
+      id: "txn-sub-04",
+      customerId: "cust-sub-03",
+      date: "2026-10-01",
+      amount: 45000,
+      status: "Disputed",
+      merchant: "CloudDesk Enterprise Annual",
+      type: "Annual charge",
+    },
+    {
+      id: "txn-sub-05",
+      customerId: "cust-sub-01",
+      date: "2026-10-10",
+      amount: 299,
+      status: "Completed",
+      merchant: "StreamBox 4K Add-on",
+      type: "Add-on",
+    },
+  ],
+};
+
+export default subscriptions;
