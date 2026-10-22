@@ -194,6 +194,18 @@ const sessions = new Map<string, Session>();
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+type EscalationListener = (event: WsEvent) => void;
+const escalationListeners = new Set<EscalationListener>();
+
+export function subscribeMockEscalations(
+  listener: EscalationListener
+): () => void {
+  escalationListeners.add(listener);
+  return () => {
+    escalationListeners.delete(listener);
+  };
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -201,6 +213,15 @@ function sleep(ms: number): Promise<void> {
 function emit(session: Session, event: WsEvent): void {
   if (!session.aborted) {
     session.listener(event);
+  }
+  if (event.type === "HITL_REQUIRED" || event.type === "HITL_RESOLVED") {
+    escalationListeners.forEach((listener) => {
+      try {
+        listener(event);
+      } catch {
+        // ignore
+      }
+    });
   }
 }
 

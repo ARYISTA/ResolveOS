@@ -9,6 +9,7 @@ const banking: DomainConfig = {
     "UPI payment debited but not received",
     "Unauthorized card transaction dispute",
   ],
+  slaMinutes: 30,
   companies: [
     {
       id: "meridian-bank",

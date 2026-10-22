@@ -183,6 +183,7 @@ export const DomainConfig = z.object({
   icon: z.string(),
   description: z.string(),
   exampleScenarios: z.tuple([z.string(), z.string()]),
+  slaMinutes: z.number().optional(),
   companies: z.array(
     z.object({
       id: z.string(),
@@ -256,6 +257,8 @@ export interface CaseRecord {
   createdAt: string;
   traceId: string;
   attachmentName?: string;
+  escalationReason?: string;
+  riskLevel?: Risk;
 }
 
 export interface CreateCaseInput {
@@ -275,5 +278,21 @@ export interface CreateCaseInput {
   hitlModifiedAmount?: number;
   attachmentName?: string;
 }
+
+// ─── Review Action Schemas ───────────────────────────────────────────────────
+
+export const ReviewApproveModifiedSchema = z.object({
+  modifiedAmount: z.number().positive("Amount must be greater than 0"),
+});
+export type ReviewApproveModifiedInput = z.infer<
+  typeof ReviewApproveModifiedSchema
+>;
+
+export const ReviewRejectSchema = z.object({
+  comment: z
+    .string()
+    .min(10, "Comment is required and must be at least 10 characters"),
+});
+export type ReviewRejectInput = z.infer<typeof ReviewRejectSchema>;
 
 

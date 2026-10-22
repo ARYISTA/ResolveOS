@@ -1,12 +1,47 @@
 import { getMode, apiFetch } from "./client";
-import { resolveHitl } from "@/lib/mock/mockEngine";
+import { resolveHitl, subscribeMockEscalations } from "@/lib/mock/mockEngine";
 import type { CaseRecord, CreateCaseInput, NodeName } from "@/lib/schemas";
 
 // In-memory store for mock mode
 const mockCases = new Map<string, CaseRecord>();
 
+// Automatically synchronize mockCases when mockEngine emits escalation events
+subscribeMockEscalations((event) => {
+  if (event.type === "HITL_REQUIRED") {
+    const existing = mockCases.get(event.caseId);
+    if (existing) {
+      existing.status = "ESCALATED";
+      existing.escalationReason = event.reason;
+      existing.riskLevel = event.riskLevel;
+    }
+  } else if (event.type === "HITL_RESOLVED") {
+    const existing = mockCases.get(event.caseId);
+    if (existing) {
+      existing.status = event.decision === "APPROVED" ? "RESOLVED" : "REJECTED";
+      if (event.modifiedAmount !== undefined) {
+        existing.approvedAmount = event.modifiedAmount;
+      }
+      if (event.reason !== undefined) {
+        existing.rejectionReason = event.reason;
+      }
+    }
+  }
+});
+
 export function getMockCaseRecord(caseId: string): CaseRecord | undefined {
   return mockCases.get(caseId);
+}
+
+export async function getEscalations(): Promise<CaseRecord[]> {
+  const mode = getMode();
+
+  if (mode === "mock") {
+    return Array.from(mockCases.values()).filter(
+      (c) => c.status === "ESCALATED"
+    );
+  }
+
+  return apiFetch<CaseRecord[]>("/api/escalations");
 }
 
 export async function createCase(input: CreateCaseInput): Promise<CaseRecord> {

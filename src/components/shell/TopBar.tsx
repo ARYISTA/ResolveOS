@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Bell, Moon, Sun } from "lucide-react";
 import { useApp } from "@/state/AppContext";
 import { getAllDomains } from "@/lib/domains";
@@ -12,7 +13,7 @@ const ROLES = [
 ] as const;
 
 export function TopBar() {
-  const { state, dispatch, toggleTheme } = useApp();
+  const { state, dispatch, toggleTheme, escalationCount } = useApp();
   const allDomains = getAllDomains();
   const activeDomain = allDomains.find((d) => d.id === state.domain);
 
@@ -146,9 +147,11 @@ export function TopBar() {
       </button>
 
       {/* Notification bell */}
-      <button
-        aria-label="Notifications"
+      <Link
+        href="/reviews"
+        aria-label={`Human review escalations (${escalationCount} open)`}
         style={{
+          position: "relative",
           width: 32,
           height: 32,
           borderRadius: 8,
@@ -159,10 +162,34 @@ export function TopBar() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
+          textDecoration: "none",
         }}
       >
         <Bell size={18} strokeWidth={1.5} />
-      </button>
+        {escalationCount > 0 && (
+          <span
+            style={{
+              position: "absolute",
+              top: 2,
+              right: 2,
+              minWidth: 16,
+              height: 16,
+              padding: "0 4px",
+              borderRadius: 999,
+              background: "var(--warning)",
+              color: "#ffffff",
+              fontSize: 10,
+              fontWeight: 700,
+              fontFamily: "var(--font-mono)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {escalationCount}
+          </span>
+        )}
+      </Link>
 
       {/* Theme toggle */}
       <button

@@ -14,6 +14,7 @@ import {
   abortMockCase,
   startMockIngestion,
   abortMockIngestion,
+  subscribeMockEscalations,
 } from "@/lib/mock/mockEngine";
 import { getMockCaseRecord } from "./cases";
 import { WsEvent, NodeName } from "@/lib/schemas";
@@ -206,3 +207,41 @@ export function subscribeToIngestion(
     }
   };
 }
+
+/**
+ * Subscribe to global escalation events (HITL_REQUIRED, HITL_RESOLVED).
+ *
+ * @param onEvent Called when an escalation arrives or is resolved.
+ * @returns Cleanup function — call on unmount.
+ */
+export function subscribeToEscalations(
+  onEvent: (event: WsEvent) => void
+): Unsubscribe {
+  const mode = getMode();
+
+  if (mode === "mock") {
+    return subscribeMockEscalations(onEvent);
+  }
+
+  // Live mode: native WebSocket to /ws/escalations
+  const ws = new WebSocket(`${_wsUrl}/ws/escalations`);
+
+  ws.addEventListener("message", (msg) => {
+    try {
+      const raw: unknown = JSON.parse(msg.data as string);
+      const parsed = WsEvent.safeParse(raw);
+      if (parsed.success) {
+        onEvent(parsed.data);
+      }
+    } catch {
+      // Malformed frame — ignore
+    }
+  });
+
+  return () => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.close();
+    }
+  };
+}
+
