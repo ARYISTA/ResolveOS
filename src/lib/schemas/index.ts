@@ -349,4 +349,147 @@ export interface DashboardMetrics {
   }[];
 }
 
+// ─── Policy Library & Viewer ──────────────────────────────────────────────────
+
+export interface PolicyVersion {
+  version: number;
+  updatedAt: string;
+  chunkCount: number;
+  filePath: string;
+  fileSizeKb: number;
+  active: boolean;
+}
+
+export interface PolicyChunk {
+  id: string;
+  section: string;
+  page: number;
+  tokenCount: number;
+  excerpt: string;
+}
+
+export interface PolicyRecord {
+  id: string;
+  name: string;
+  companyId: string;
+  companyName: string;
+  domain: Domain;
+  currentVersion: number;
+  versions: PolicyVersion[];
+  chunks: PolicyChunk[];
+  createdAt: string;
+}
+
+// ─── Audit Log (PRD 6.9) ──────────────────────────────────────────────────────
+
+export type AuditActionType =
+  | "CASE_CREATED"
+  | "POLICY_RETRIEVED"
+  | "AI_DECISION_GENERATED"
+  | "RULE_CHECKED"
+  | "HITL_TRIGGERED"
+  | "HUMAN_APPROVED"
+  | "REFUND_EXECUTED"
+  | "REFUND_FAILED";
+
+export type AuditActorType = "AI" | "System" | "Human" | "Customer";
+
+export interface AuditRecord {
+  id: string;
+  ts: string;
+  tenant: string;
+  caseId: string;
+  actor: string;
+  actorType: AuditActorType;
+  action: AuditActionType;
+  oldState: string;
+  newState: string;
+  traceId: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface AuditQueryOptions {
+  action?: AuditActionType | "ALL";
+  actorType?: AuditActorType | "ALL";
+  caseId?: string;
+  tenant?: string;
+  page?: number;
+  limit?: number;
+}
+
+// ─── Security Lab (PRD 6.10) ──────────────────────────────────────────────────
+
+export type SecurityLayer =
+  | "LLM guard"
+  | "Schema validation"
+  | "Policy enforcement"
+  | "Tenant isolation";
+
+export interface SecurityAttackPreset {
+  id: string;
+  title: string;
+  category: string;
+  description: string;
+  attackPayload: string;
+  expectedLayer: SecurityLayer;
+  expectedResult: string;
+}
+
+export interface SecurityAttackResult {
+  attackId: string;
+  caseId: string;
+  layerCaught: SecurityLayer;
+  verdict: Verdict;
+  blocked: boolean;
+  reason: string;
+  executedAt: string;
+  traceId: string;
+}
+
+export interface SecurityLayerSummary {
+  layer: SecurityLayer;
+  attacksRun: number;
+  blocked: number;
+  leaked: number; // must be 0
+}
+
+export interface SecurityLabSummary {
+  totalRun: number;
+  totalBlocked: number;
+  totalLeaked: number;
+  layerSummaries: SecurityLayerSummary[];
+}
+
+// ─── Architecture Comparison (PRD 6.11) ───────────────────────────────────────
+
+export type ComparisonApproach =
+  | "Manual"
+  | "Rules-only"
+  | "Pure LLM"
+  | "RAG-only"
+  | "Hybrid (proposed)";
+
+export interface ApproachResult {
+  approach: ComparisonApproach;
+  decision: Decision;
+  amount: number;
+  isCorrect: boolean;
+  latencyMs: number;
+  estimatedCostUsd: number;
+  citationPresent: boolean;
+  unsafeAction: boolean;
+  notes: string;
+}
+
+export interface ComparisonRunResult {
+  presetId: string;
+  presetLabel: string;
+  groundTruthDecision: Decision;
+  groundTruthAmount: number;
+  results: ApproachResult[];
+  aggregateAccuracyPercent: number;
+}
+
+
+
 
